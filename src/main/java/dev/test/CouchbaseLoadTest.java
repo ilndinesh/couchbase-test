@@ -42,11 +42,11 @@ public class CouchbaseLoadTest {
 
     public static final String[] DEFAULTS = new String[]{
             "cluster=localhost:8091", "bucketName=test", "bucketUser=test",
-            "bucketPassword=test", "recordCount=10000", "recordDelay=1000",
-            "recordStep=1000", "readCount=1000", "writeCount=500",
-            "idPrefix=id-", "readDelay=1000", "writeDelay=1000",
-            "loopCount=10", "threadCount=1", "removeRecords=0",
-            "printResults=0",};
+            "bucketPassword=test", "recordCount=10000", "recordStart=0",
+            "recordDelay=1000", "recordStep=1000", "readCount=1000",
+            "writeCount=500", "idPrefix=id-", "readDelay=1000",
+            "writeDelay=1000", "loopCount=10", "threadCount=1",
+            "removeRecords=0", "printResults=0",};
 
     private final Map<String, Object> propMap = new HashMap<String, Object>();
 
@@ -157,6 +157,7 @@ public class CouchbaseLoadTest {
         final String bucketUser = (String) propMap.get("bucketUser");
         final String bucketPassword = (String) propMap.get("bucketPassword");
         final int recordCount = (Integer) propMap.get("recordCount");
+        final int recordStart = (Integer) propMap.get("recordStart");
         // int clientPort = (Integer) propMap.get("clientPort");
         final int recordDelay = (Integer) propMap.get("recordDelay");
         final int recordStep = (Integer) propMap.get("recordStep");
@@ -207,7 +208,8 @@ public class CouchbaseLoadTest {
                     long startTime, endTime;
                     String key;
                     boolean status = false;
-                    for (int index = 0; index < recordCount; index++) {
+                    for (int index = recordStart; index < recordCount
+                            + recordStart; index++) {
                         key = idPrefix + index;
                         startTime = System.nanoTime();
                         try {
@@ -233,7 +235,7 @@ public class CouchbaseLoadTest {
                     + "," + "Iteration");
         }
         final long createStart = System.nanoTime();
-        for (int index = 0; index < recordCount; index++) {
+        for (int index = recordStart; index < recordCount + recordStart; index++) {
             if (index % recordStep == 0) {
                 Thread.sleep(recordDelay);
             }
@@ -243,7 +245,10 @@ public class CouchbaseLoadTest {
                 public void run() {
                     long startTime, endTime;
                     final String key = idPrefix + currentIndex;
-                    final String bean = "{\"id\":\"" + key + "\"}";
+                    final String bean = "{\"docId\":\""
+                            + key
+                            + "\",\"docType\": \"device\",\"status\": \"online\",\"busy\": \"true\",\"registeredAt\": "
+                            + System.currentTimeMillis() + "}";
                     boolean status = false;
                     startTime = System.nanoTime();
                     try {
@@ -294,7 +299,8 @@ public class CouchbaseLoadTest {
                         e.printStackTrace();
                     }
                     final int currentIndex = index;
-                    for (int opIndex = 0; opIndex < readCount; opIndex++) {
+                    for (int opIndex = recordStart; opIndex < readCount
+                            + recordStart; opIndex++) {
                         final int currentOpIndex = opIndex;
                         storePool.execute(new Runnable() {
 
@@ -340,7 +346,8 @@ public class CouchbaseLoadTest {
                         e.printStackTrace();
                     }
                     final int currentIndex = index;
-                    for (int opIndex = 0; opIndex < writeCount; opIndex++) {
+                    for (int opIndex = recordStart; opIndex < writeCount
+                            + recordStart; opIndex++) {
                         final int currentOpIndex = opIndex;
                         storePool.execute(new Runnable() {
 
@@ -349,7 +356,10 @@ public class CouchbaseLoadTest {
                                 String bean;
                                 boolean status = false;
                                 final String key = idPrefix + currentIndex;
-                                bean = "{\"id\":\"" + key + "\"}";
+                                bean = "{\"docId\":\""
+                                        + key
+                                        + "\",\"docType\": \"device\",\"status\": \"online\",\"busy\": \"true\",\"registeredAt\": "
+                                        + System.currentTimeMillis() + "}";
                                 startTime = System.nanoTime();
                                 try {
                                     status = client.set(key, bean, persistTo,

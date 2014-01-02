@@ -18,6 +18,7 @@ bucketName=test
 bucketUser=test
 bucketPassword=test
 recordCount=10000
+recordStart=0
 recordDelay=1000
 recordStep=1000
 readCount=1000
