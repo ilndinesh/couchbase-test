@@ -16,6 +16,10 @@ import net.spy.memcached.ReplicateTo;
 
 import com.couchbase.client.CouchbaseClient;
 import com.couchbase.client.CouchbaseConnectionFactoryBuilder;
+import com.google.gson.Gson;
+import dev.test.bean.Report.Conn;
+import dev.test.StoreBean;
+import dev.test.StoreBean.NodeInfo;
 
 /**
  * Couchbase load test
@@ -151,7 +155,30 @@ public class CouchbaseLoadTest {
         loadProps(props, propMap, rawMap);
     }
 
+    public StoreBean createBean(final String idPrefix, final int index) {
+        final StoreBean bean = new StoreBean();
+        final String deviceId = idPrefix + index;
+        bean.setDocId(deviceId);
+        bean.setDocType("device");
+        final long now = System.currentTimeMillis();
+        bean.setRegisteredAt(now);
+        bean.setUpdatedAt(now);
+        final Map<String, NodeInfo> nodeInfoMap = new HashMap<String, NodeInfo>();
+        final Map<Object, Conn> connInfoMap = new HashMap<Object, Conn>();
+        final Conn conn = new Conn();
+        conn.setAt(now / 1000);
+        conn.setLast(now / 1000);
+        conn.setPort(index);
+        conn.setIp(deviceId);
+        connInfoMap.put(12345678, conn);
+        nodeInfoMap.put("node1", new NodeInfo("node1", "loclahost",
+                "127.0.0.1", 3400, connInfoMap));
+        bean.setNodeInfoMap(nodeInfoMap);
+        return bean;
+    }
+
     public void run() throws Exception {
+        final Gson gson = new Gson();
         final String cluster = (String) propMap.get("cluster");
         final String bucketName = (String) propMap.get("bucketName");
         final String bucketUser = (String) propMap.get("bucketUser");
@@ -245,15 +272,12 @@ public class CouchbaseLoadTest {
                 public void run() {
                     long startTime, endTime;
                     final String key = idPrefix + currentIndex;
-                    final String bean = "{\"docId\":\""
-                            + key
-                            + "\",\"docType\": \"device\",\"status\": \"online\",\"busy\": \"true\",\"registeredAt\": "
-                            + System.currentTimeMillis() + "}";
+                    final StoreBean bean = createBean(idPrefix, currentIndex);
                     boolean status = false;
                     startTime = System.nanoTime();
                     try {
-                        status = client.set(key, bean, persistTo, replicateTo)
-                                .get();
+                        status = client.set(key, gson.toJson(bean), persistTo,
+                                replicateTo).get();
                     } catch (final Exception e) {
                         e.printStackTrace();
                     }
@@ -353,17 +377,14 @@ public class CouchbaseLoadTest {
 
                             public void run() {
                                 long startTime, endTime;
-                                String bean;
                                 boolean status = false;
                                 final String key = idPrefix + currentIndex;
-                                bean = "{\"docId\":\""
-                                        + key
-                                        + "\",\"docType\": \"device\",\"status\": \"online\",\"busy\": \"true\",\"registeredAt\": "
-                                        + System.currentTimeMillis() + "}";
+                                final StoreBean bean = createBean(idPrefix,
+                                        currentIndex);
                                 startTime = System.nanoTime();
                                 try {
-                                    status = client.set(key, bean, persistTo,
-                                            replicateTo).get();
+                                    status = client.set(key, gson.toJson(bean),
+                                            persistTo, replicateTo).get();
                                 } catch (final Exception e) {
                                     e.printStackTrace();
                                 }
