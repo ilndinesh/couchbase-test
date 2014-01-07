@@ -11,6 +11,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import net.spy.memcached.CASResponse;
+import net.spy.memcached.CASValue;
 import net.spy.memcached.PersistTo;
 import net.spy.memcached.ReplicateTo;
 
@@ -48,21 +50,23 @@ public class CouchbaseLoadTest {
             "cluster=localhost:8091", "bucketName=test", "bucketUser=test",
             "bucketPassword=test", "recordCount=10000", "recordStart=0",
             "recordDelay=1000", "recordStep=1000", "readCount=1000",
-            "writeCount=500", "idPrefix=id-", "readDelay=1000",
-            "writeDelay=1000", "loopCount=10", "threadCount=1",
-            "removeRecords=0", "printResults=0",};
+            "writeCount=500", "casCount=500", "idPrefix=id-", "readDelay=1000",
+            "writeDelay=1000", "casDelay=1000", "loopCount=10",
+            "threadCount=1", "removeRecords=0", "printResults=0",};
 
     private final Map<String, Object> propMap = new HashMap<String, Object>();
 
     private final Map<String, String> rawMap = new HashMap<String, String>();
 
-    private boolean createDone, readDone, writeDone;
+    private boolean createDone, readDone, writeDone, casDone;
 
     private final AtomicInteger createTotal = new AtomicInteger();
 
     private final AtomicInteger readTotal = new AtomicInteger();
 
     private final AtomicInteger writeTotal = new AtomicInteger();
+
+    private final AtomicInteger casTotal = new AtomicInteger();
 
     public CouchbaseLoadTest(final String[] args) {
         loadProps(DEFAULTS);
@@ -151,6 +155,22 @@ public class CouchbaseLoadTest {
         this.notifyAll();
     }
 
+    /**
+     * @return the casDone
+     */
+    public boolean isCasDone() {
+        return casDone;
+    }
+
+    /**
+     * @param casDone
+     *            the casDone to set
+     */
+    public void setCasDone(final boolean casDone) {
+        this.casDone = casDone;
+        this.notifyAll();
+    }
+
     public void loadProps(final String[] props) {
         loadProps(props, propMap, rawMap);
     }
@@ -190,8 +210,10 @@ public class CouchbaseLoadTest {
         final int recordStep = (Integer) propMap.get("recordStep");
         final int readCount = (Integer) propMap.get("readCount");
         final int writeCount = (Integer) propMap.get("writeCount");
+        final int casCount = (Integer) propMap.get("casCount");
         final int readDelay = (Integer) propMap.get("readDelay");
         final int writeDelay = (Integer) propMap.get("writeDelay");
+        final int casDelay = (Integer) propMap.get("casDelay");
         final String idPrefix = (String) propMap.get("idPrefix");
         final int loopCount = (Integer) propMap.get("loopCount");
         final int threadCount = (Integer) propMap.get("threadCount");
@@ -199,6 +221,7 @@ public class CouchbaseLoadTest {
         final int printResults = (Integer) propMap.get("printResults");
         final int readTotalCount = readCount * loopCount;
         final int writeTotalCount = writeCount * loopCount;
+        final int casTotalCount = casCount * loopCount;
         final PersistTo persistTo = PersistTo.ZERO;
         final ReplicateTo replicateTo = ReplicateTo.ZERO;
         // new AtomicInteger();
@@ -306,7 +329,7 @@ public class CouchbaseLoadTest {
         if (printResults == 1) {
             System.out.println("create-done,," + (createStop - createStart));
         }
-        final long readWriteStart = System.nanoTime();
+        final long allOpStart = System.nanoTime();
         new Thread() {
 
             /*
@@ -350,7 +373,9 @@ public class CouchbaseLoadTest {
                         });
                     }
                 }
-                // setReadDone(true);
+                if (readCount == 0) {
+                    setReadDone(true);
+                }
             }
 
         }.start();
@@ -407,20 +432,117 @@ public class CouchbaseLoadTest {
                         });
                     }
                 }
-                // setWriteDone(true);
+                if (writeCount == 0) {
+                    setWriteDone(true);
+                }
+            }
+
+        }.start();
+        new Thread() {
+
+            /*
+             * (non-Javadoc)
+             *
+             * @see java.lang.Thread#run()
+             */
+            @Override
+            public void run() {
+                for (int index = 1; index <= loopCount; index++) {
+                    try {
+                        Thread.sleep(casDelay);
+                    } catch (final InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    final int currentIndex = index;
+                    for (int opIndex = recordStart; opIndex < casCount
+                            + recordStart; opIndex++) {
+                        final int currentOpIndex = opIndex;
+                        storePool.execute(new Runnable() {
+
+                            public void run() {
+                                long startTime, endTime;
+                                boolean status = false;
+                                final String key = idPrefix + currentIndex;
+                                final CASValue<Object> casValue = client
+                                        .gets(key);
+                                if (casValue == null) {
+                                    final StoreBean bean = createBean(idPrefix,
+                                            currentIndex);
+                                    startTime = System.nanoTime();
+                                    try {
+                                        status = client.set(key,
+                                                gson.toJson(bean), persistTo,
+                                                replicateTo).get();
+                                    } catch (final Exception e) {
+                                        e.printStackTrace();
+                                    }
+                                    endTime = System.nanoTime();
+                                } else {
+                                    final StoreBean bean = gson.fromJson(
+                                            casValue.getValue().toString(),
+                                            StoreBean.class);
+                                    bean.setCommunicationCount(bean
+                                            .getCommunicationCount() + 1);
+                                    bean.setRegisteredAt(System
+                                            .currentTimeMillis());
+                                    if (!bean.getNodeInfoMap().isEmpty()) {
+                                        bean.getNodeInfoMap()
+                                                .values()
+                                                .iterator()
+                                                .next()
+                                                .getConnInfoMap()
+                                                .values()
+                                                .iterator()
+                                                .next()
+                                                .setAt(System
+                                                        .currentTimeMillis());
+                                    }
+                                    startTime = System.nanoTime();
+                                    try {
+                                        status = (client.cas(key,
+                                                casValue.getCas(),
+                                                gson.toJson(bean), persistTo,
+                                                replicateTo) == CASResponse.OK);
+                                    } catch (final Exception e) {
+                                        e.printStackTrace();
+                                    }
+                                    endTime = System.nanoTime();
+                                }
+                                if (printResults == 1) {
+                                    System.out.println("cas,"
+                                            + currentOpIndex
+                                            + ","
+                                            + (status
+                                                    ? (endTime - startTime)
+                                                    : -1) + "," + currentIndex);
+                                }
+                                if (casTotal.incrementAndGet() == casTotalCount) {
+                                    synchronized (CouchbaseLoadTest.this) {
+                                        casDone = true;
+                                        CouchbaseLoadTest.this.notifyAll();
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+                if (casCount == 0) {
+                    setCasDone(true);
+                }
             }
 
         }.start();
         synchronized (this) {
             while ((readCount > 0 && !readDone)
-                    || (writeCount > 0 && !writeDone)) {
+                    || (writeCount > 0 && !writeDone)
+                    || (casCount > 0 && !casDone)) {
                 this.wait();
             }
         }
-        final long readWriteStop = System.nanoTime();
+        final long allOpStop = System.nanoTime();
         if (printResults == 1) {
-            System.out.println("read-write-done,,"
-                    + (readWriteStop - readWriteStart - (loopCount - 1)
+            System.out.println("all-op-done,,"
+                    + (allOpStop - allOpStart - (loopCount - 1)
                             * (readDelay + writeDelay) * 1000000));
         }
         System.exit(0);
