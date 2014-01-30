@@ -32,6 +32,7 @@ loopCount=10
 threadCount=1
 removeRecords=0
 printResults=0
+asyncMode=1
 
 # Examples
 

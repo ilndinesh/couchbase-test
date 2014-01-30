@@ -52,7 +52,7 @@ public class CouchbaseLoadTest {
             "recordDelay=1000", "recordStep=1000", "readCount=1000",
             "writeCount=500", "casCount=500", "idPrefix=id-", "readDelay=1000",
             "writeDelay=1000", "casDelay=1000", "loopCount=10",
-            "threadCount=1", "removeRecords=0", "printResults=0",};
+            "threadCount=1", "removeRecords=0", "printResults=0", "asyncMode=1"};
 
     private final Map<String, Object> propMap = new HashMap<String, Object>();
 
@@ -219,6 +219,7 @@ public class CouchbaseLoadTest {
         final int threadCount = (Integer) propMap.get("threadCount");
         final int removeRecords = (Integer) propMap.get("removeRecords");
         final int printResults = (Integer) propMap.get("printResults");
+        final int asyncMode = (Integer) propMap.get("asyncMode");
         final int readTotalCount = readCount * loopCount;
         final int writeTotalCount = writeCount * loopCount;
         final int casTotalCount = casCount * loopCount;
@@ -263,8 +264,13 @@ public class CouchbaseLoadTest {
                         key = idPrefix + index;
                         startTime = System.nanoTime();
                         try {
-                            status = client.delete(key, persistTo, replicateTo)
-                                    .get();
+                            if (asyncMode == 1) {
+                                client.delete(key, persistTo, replicateTo);
+                                status = true;
+                            } else {
+                                status = client.delete(key, persistTo,
+                                        replicateTo).get();
+                            }
                         } catch (final Exception e) {
                             e.printStackTrace();
                         }
@@ -299,8 +305,14 @@ public class CouchbaseLoadTest {
                     boolean status = false;
                     startTime = System.nanoTime();
                     try {
-                        status = client.set(key, gson.toJson(bean), persistTo,
-                                replicateTo).get();
+                        if (asyncMode == 1) {
+                            client.set(key, gson.toJson(bean), persistTo,
+                                    replicateTo);
+                            status = true;
+                        } else {
+                            status = client.set(key, gson.toJson(bean),
+                                    persistTo, replicateTo).get();
+                        }
                     } catch (final Exception e) {
                         e.printStackTrace();
                     }
@@ -408,8 +420,15 @@ public class CouchbaseLoadTest {
                                         currentIndex);
                                 startTime = System.nanoTime();
                                 try {
-                                    status = client.set(key, gson.toJson(bean),
-                                            persistTo, replicateTo).get();
+                                    if (asyncMode == 1) {
+                                        client.set(key, gson.toJson(bean),
+                                                persistTo, replicateTo);
+                                        status = true;
+                                    } else {
+                                        status = client.set(key,
+                                                gson.toJson(bean), persistTo,
+                                                replicateTo).get();
+                                    }
                                 } catch (final Exception e) {
                                     e.printStackTrace();
                                 }
@@ -470,9 +489,16 @@ public class CouchbaseLoadTest {
                                             currentIndex);
                                     startTime = System.nanoTime();
                                     try {
-                                        status = client.set(key,
-                                                gson.toJson(bean), persistTo,
-                                                replicateTo).get();
+                                        if (asyncMode == 1) {
+                                            client.set(key, gson.toJson(bean),
+                                                    persistTo, replicateTo);
+                                            status = true;
+                                        } else {
+                                            status = client.set(key,
+                                                    gson.toJson(bean),
+                                                    persistTo, replicateTo)
+                                                    .get();
+                                        }
                                     } catch (final Exception e) {
                                         e.printStackTrace();
                                     }
